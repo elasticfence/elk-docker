@@ -40,19 +40,65 @@ echo "elasticfence.root.password: elasticFence" >> /etc/elasticsearch/elasticsea
 echo 'elasticfence.whitelist: ["127.0.0.1", $(/sbin/ip route|awk '/default/ { print $3 }')"]' >> /etc/elasticsearch/elasticsearch.yml
 
 ## start services
-service elasticsearch start
-# service logstash start
+  service elasticsearch start
 
-# wait for elasticsearch to start up
-# - https://github.com/elasticsearch/kibana/issues/3077
-counter=0
-while [ ! "$(curl localhost:9200 2> /dev/null)" -a $counter -lt 30  ]; do
-  sleep 1
-  ((counter++))
-  echo "waiting for Elasticsearch to be up ($counter/30)"
-done
+  # wait for Elasticsearch to start up before either starting Kibana (if enabled)
+  # or attempting to stream its log file
+  # - https://github.com/elasticsearch/kibana/issues/3077
+  counter=0
+  while [ ! "$(curl localhost:9200 2> /dev/null)" -a $counter -lt 30  ]; do
+    sleep 1
+    ((counter++))
+    echo "waiting for Elasticsearch to be up ($counter/30)"
+  done
 
-service kibana start
+  CLUSTER_NAME=$(grep -Po '(?<=^cluster.name: ).*' /etc/elasticsearch/elasticsearch.yml | sed -e 's/^[ \t]*//;s/[ \t]*$//')
+  if [ -z "$CLUSTER_NAME" ]; then
+     CLUSTER_NAME=elasticsearch
+  fi
+  OUTPUT_LOGFILES+="/var/log/elasticsearch/${CLUSTER_NAME}.log "
+fi
 
-tail -f /var/log/elasticsearch/elasticsearch.log &
+# Logstash
+if [ -z "$LOGSTASH_START" ]; then
+  LOGSTASH_START=0
+fi
+if [ "$LOGSTASH_START" -ne "1" ]; then
+  echo "LOGSTASH_START is set to something different from 1, not starting..."
+else
+  # override LS_HEAP_SIZE variable if set
+  if [ ! -z "$LS_HEAP_SIZE" ]; then
+    awk -v LINE="LS_HEAP_SIZE=\"$LS_HEAP_SIZE\"" '{ sub(/^LS_HEAP_SIZE=.*/, LINE); print; }' /etc/init.d/logstash \
+        > /etc/init.d/logstash.new && mv /etc/init.d/logstash.new /etc/init.d/logstash && chmod +x /etc/init.d/logstash
+  fi
+
+  # override LS_OPTS variable if set
+  if [ ! -z "$LS_OPTS" ]; then
+    awk -v LINE="LS_OPTS=\"$LS_OPTS\"" '{ sub(/^LS_OPTS=.*/, LINE); print; }' /etc/init.d/logstash \
+        > /etc/init.d/logstash.new && mv /etc/init.d/logstash.new /etc/init.d/logstash && chmod +x /etc/init.d/logstash
+  fi
+
+  service logstash start
+  OUTPUT_LOGFILES+="/var/log/logstash/logstash.log "
+fi
+
+# Kibana
+if [ -z "$KIBANA_START" ]; then
+  KIBANA_START=1
+fi
+if [ "$KIBANA_START" -ne "1" ]; then
+  echo "KIBANA_START is set to something different from 1, not starting..."
+else
+  service kibana start
+  OUTPUT_LOGFILES+="/var/log/kibana/kibana4.log "
+fi
+
+# Exit if nothing has been started
+if [ "$ELASTICSEARCH_START" -ne "1" ] && [ "$LOGSTASH_START" -ne "1" ] \
+  && [ "$KIBANA_START" -ne "1" ]; then
+  >&2 echo "No services started. Exiting."
+  exit 1
+fi
+
+tail -f $OUTPUT_LOGFILES &
 wait
