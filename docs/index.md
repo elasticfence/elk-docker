@@ -32,6 +32,7 @@ This web page documents how to use the [sebp/elk](https://hub.docker.com/r/sebp/
 	- [Disabling SSL/TLS](#disabling-ssl-tls)
 - [Troubleshooting](#troubleshooting)
 - [Reporting issues](#reporting-issues)
+- [Breaking changes](#breaking-changes)
 - [References](#references)
 - [About](#about)
 
@@ -70,7 +71,7 @@ This command publishes the following ports, which are needed for proper operatio
 - 5044 (Logstash Beats interface, receives logs from Beats such as Filebeat – see the *[Forwarding logs with Filebeat](#forwarding-logs-filebeat)* section).
 - 5000 (Logstash Lumberjack interface, receives logs from Logstash forwarders – see the *[Forwarding logs with Logstash forwarder](#forwarding-logs-logstash-forwarder)* section).
 
-**Note** – The image also exposes Elasticsearch's transport interface on port 9300. Use the `-p 9300:9300` option with the `docker` command above to publish it. This transport interface is notably used by [Elasticsearch's Java client API](https://www.elastic.co/guide/en/elasticsearch/client/java-api/current/index.html).
+**Note** – The image also exposes Elasticsearch's transport interface on port 9300. Use the `-p 9300:9300` option with the `docker` command above to publish it. This transport interface is notably used by [Elasticsearch's Java client API](https://www.elastic.co/guide/en/elasticsearch/client/java-api/current/index.html), and to run Elasticsearch in a cluster.
 
 The figure below shows how the pieces fit together.
 
@@ -202,9 +203,7 @@ The following environment variables can be used to override the defaults used to
 
 - `LS_HEAP_SIZE`: Logstash heap size (default: `"500m"`)
 
-- `LS_OPTS`: Logstash options (default: `"--auto-reload"` in images with tags `es231_l231_k450` and `es232_l232_k450`, `""` in `latest`)
-
-	**Warning** – As Logstash's auto-reload feature (introduced in version 2.3) creates a resource leak in early 2.3.x versions (see [https://github.com/elastic/logstash/issues/5235](https://github.com/elastic/logstash/issues/5235)), the default `--auto-reload` option has been removed in the `es233_l232_k451` image at the time (see [https://github.com/spujadas/elk-docker/issues/41](https://github.com/spujadas/elk-docker/issues/41)). For users of images with tags `es231_l231_k450` and `es232_l232_k450`, it is strongly recommended to override Logstash's options to disable the auto-reload feature by setting the `LS_OPTS` environment to `--no-auto-reload`. Future versions of the image may re-enable the auto-reload feature once a stable version of Logstash is released with the memory leak issue fixed (should be version 2.3.3). 
+- `LS_OPTS`: Logstash options (default: `"--auto-reload"` in images with tags `es231_l231_k450` and `es232_l232_k450`, `""` in `latest`; see [Breaking changes](#breaking-changes))
  
 As an illustration, the following command starts the stack, running Elasticsarch with a 2GB heap size, Logstash with a 1GB heap size and Logstash's configuration auto-reload disabled:
 
@@ -405,7 +404,7 @@ To modify an existing configuration file, you can bind-mount a local configurati
 
 To create your own image with updated or additional configuration files, you can create a `Dockerfile` that extends the original image, with contents such as the following:
 
-	FROM seb/elk
+	FROM sebp/elk
 	
 	# overwrite existing file
 	ADD /path/to/your-30-output.conf /etc/logstash/conf.d/30-output.conf
@@ -479,6 +478,8 @@ This command mounts the named volume `elk-data` to `/var/lib/elasticsearch` (and
 
 See Docker's page on [Managing Data in Containers](https://docs.docker.com/engine/userguide/containers/dockervolumes/) and Container42's [Docker In-depth: Volumes](http://container42.com/2014/11/03/docker-indepth-volumes/) page for more information on managing data volumes.
 
+In terms of permissions, Elasticsearch data is created by the image's `elasticsearch` user, with UID 991 and GID 991.
+
 ## Setting up an Elasticsearch cluster <a name="elasticsearch-cluster"></a>
 
 The ELK image can be used to run an Elasticsearch cluster, either on [separate hosts](#elasticsearch-cluster-different-hosts) or (mainly for test purposes) on a [single host](#elasticsearch-cluster-single-host), as described below.
@@ -487,7 +488,18 @@ For more (non-Docker-specific) information on setting up an Elasticsearch cluste
 
 ### Running Elasticsearch nodes on different hosts <a name="elasticsearch-cluster-different-hosts"></a>
 
-To run nodes on different hosts, you'll need to update Elasticsearch's `/etc/elasticsearch/elasticsearch.yml` file in the Docker image to configure the [zen discovery module](http://www.elastic.co/guide/en/elasticsearch/reference/current/modules-discovery.html) as needed for the nodes to find each other. Specifically, you need to add a `discovery.zen.ping.unicast.hosts` directive to point to the IP addresses or hostnames of hosts that should be polled to perform discovery when Elasticsearch is started on each node.
+To run cluster nodes on different hosts, you'll need to update Elasticsearch's `/etc/elasticsearch/elasticsearch.yml` file in the Docker image so that the nodes can find each other:
+
+- Configure the [zen discovery module](http://www.elastic.co/guide/en/elasticsearch/reference/current/modules-discovery.html), by adding a `discovery.zen.ping.unicast.hosts` directive to point to the IP addresses or hostnames of hosts that should be polled to perform discovery when Elasticsearch is started on each node.
+
+- Set up the `network.*` directives as follows:
+
+		network.host: 0.0.0.0
+		network.publish_host: <reachable IP address or FQDN>
+
+	where `reachable IP address` refers to an IP address that other nodes can reach (e.g. a public IP address, or a routed private IP address, but *not* the Docker-assigned internal 172.x.x.x address).
+
+- Publish port 9300
 
 As an example, start an ELK container as usual on one host, which will act as the first master. Let's assume that the host is called *elk-master.example.com*.
 
@@ -517,11 +529,12 @@ This shows that only one node is up at the moment, and the `yellow` status indic
 Then, on another host, create a file named `elasticsearch-slave.yml` (let's say it's in `/home/elk`), with the following contents:
 
 	network.host: 0.0.0.0
+	network.publish_host: <reachable IP address or FQDN>
 	discovery.zen.ping.unicast.hosts: ["elk-master.example.com"]
 
 You can now start an ELK container that uses this configuration file, using the following command (which mounts the configuration files on the host into the container):
 
-	$ sudo docker run -it --rm=true -p 9200:9200 \
+	$ sudo docker run -it --rm=true -p 9200:9200 -p 9300:9300 \
 	  -v /home/elk/elasticsearch-slave.yml:/etc/elasticsearch/elasticsearch.yml \
 	  sebp/elk
 
@@ -665,9 +678,11 @@ If this still seems to fail, then you should have a look at:
 
 - Your log-emitting client's logs.
 
-- ELK's logs, by `docker exec`'ing into the running container (see [Creating a dummy log entry](#creating-dummy-log-entry)) and checking Logstash's logs (located in `/var/log/logstash`), Elasticsearch's logs (in `/var/log/elasticsearch`), and Kibana's logs (in `/var/log/kibana`).
+- ELK's logs, by `docker exec`'ing into the running container (see [Creating a dummy log entry](#creating-dummy-log-entry)) turning on stdout log (see [plugins-outputs-stdout](https://www.elastic.co/guide/en/logstash/current/plugins-outputs-stdout.html)) and checking Logstash's logs (located in `/var/log/logstash`), Elasticsearch's logs (in `/var/log/elasticsearch`), and Kibana's logs (in `/var/log/kibana`).
 
 	Note that ELK's logs are rotated daily and are deleted after a week, using logrotate. You can change this behaviour by overwriting the `elasticsearch`, `logstash` and `kibana` files in `/etc/logrotate.d`.  
+
+For non-Docker-related issues with Elasticsearch, Kibana, and Elasticsearch, make sure you have a look at the [Elastic forums](https://discuss.elastic.co/).
 
 ## Reporting issues <a name="reporting-issues"></a>
 
@@ -676,6 +691,49 @@ You can report issues with this image using [GitHub's issue tracker](https://git
 Bearing in mind that the first thing I'll need to do is reproduce your issue, please provide as much relevant information (e.g. logs, configuration files, what you were expecting and what you got instead, any troubleshooting steps that you took, what _is_ working) as possible for me to do that.
 
 [Pull requests](https://github.com/spujadas/elk-docker/pulls) are also welcome if you have found an issue and can solve it.
+
+## Breaking changes <a name="breaking changes"></a>
+
+Here is the list of breaking changes that may have side effects when upgrading to later versions of the ELK image: 
+
+- **Version 5** (advance warning)
+
+	*Applies to tags: to be announced.*
+
+	Breaking changes are to be expected in the upcoming version 5 of [Elasticsearch](https://www.elastic.co/guide/en/elasticsearch/reference/master/breaking-changes.html), [Logstash](https://www.elastic.co/guide/en/logstash/master/breaking-changes.html), and [Kibana](https://www.elastic.co/guide/en/kibana/master/releasenotes.html).
+
+- **Logstash forwarder** (advance warning)
+
+	*Applies to tags: same as for version 5 (see above).*
+
+	The use of Logstash forwarder is deprecated, its Logstash input plugin configuration will soon be removed, and port 5000 will no longer be exposed.
+
+- **UIDs and GIDs**
+
+	*Applies to tags: `es235_l234_k454` and later.*
+
+	Fixed UIDs and GIDs are now assigned to Elasticsearch (both the UID and GID are 991), Logstash (992), and Kibana (993). 
+
+- **Java 8**
+
+	*Applies to tags: `es234_l234_k452` and later.*
+
+	This image initially used Oracle JDK 7, which is [no longer updated by Oracle](http://www.oracle.com/technetwork/java/javase/eol-135779.html), and no longer available as a Ubuntu package.
+
+	As from tag `es234_l234_k452`, the image uses Oracle JDK 8. This may have unintended side effects on plugins that rely on Java.
+
+- **Logstash configuration auto-reload**
+
+	*Applies to tags: `es231_l231_k450`, `es232_l232_k450`.*
+
+	Logstash's configuration auto-reload option was introduced in Logstash 2.3 and enabled in the images with tags `es231_l231_k450` and `es232_l232_k450`.
+
+	As this feature created a resource leak prior to Logstash 2.3.3 (see [https://github.com/elastic/logstash/issues/5235](https://github.com/elastic/logstash/issues/5235)), the `--auto-reload` option was removed as from the `es233_l232_k451`-tagged image (see [https://github.com/spujadas/elk-docker/issues/41](https://github.com/spujadas/elk-docker/issues/41)).
+
+	Users of images with tags `es231_l231_k450` and `es232_l232_k450` are strongly recommended:
+
+	- To either override Logstash's options to disable the auto-reload feature by setting the `LS_OPTS` environment to `--no-auto-reload` if this feature is not needed.
+	- Or to use a later version of the image (from `es234_l234_k452` onwards) and pass `--auto-reload` to `LS_OPTS` if the feature is needed.
 
 ## References <a name="references"></a>
 
