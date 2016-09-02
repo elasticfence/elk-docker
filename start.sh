@@ -36,13 +36,6 @@ service cron start
 rm -f /var/run/elasticsearch/elasticsearch.pid /var/run/logstash.pid \
   /var/run/kibana4.pid
 
-## install elasticfence plugin
-  echo "Installing ElasticFence..."
-  cd /usr/share/elasticsearch && ./bin/plugin install https://rawgit.com/elasticfence/elasticfence-releases/master/releases/elasticfence-2.4.0-SNAPSHOT.zip
-  echo "elasticfence.disabled: true" >> /etc/elasticsearch/elasticsearch.yml
-  echo "elasticfence.root.password: elasticFence" >> /etc/elasticsearch/elasticsearch.yml
-  echo 'elasticfence.whitelist: ["127.0.0.1", $(/sbin/ip route|awk '/default/ { print $3 }')"]' >> /etc/elasticsearch/elasticsearch.yml
-
 ## start services
   service elasticsearch start
 
