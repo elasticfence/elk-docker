@@ -35,8 +35,29 @@ service cron start
 
 rm -f /var/run/elasticsearch/elasticsearch.pid /var/run/logstash.pid \
   /var/run/kibana4.pid
+## initialise list of log files to stream in console (initially empty)
+OUTPUT_LOGFILES=""
 
-## start services
+## start services as needed
+
+# Elasticsearch
+if [ -z "$ELASTICSEARCH_START" ]; then
+  ELASTICSEARCH_START=1
+fi
+if [ "$ELASTICSEARCH_START" -ne "1" ]; then
+  echo "ELASTICSEARCH_START is set to something different from 1, not starting..."
+else
+  # override ES_HEAP_SIZE variable if set
+  if [ ! -z "$ES_HEAP_SIZE" ]; then
+    awk -v LINE="ES_HEAP_SIZE=\"$ES_HEAP_SIZE\"" '{ sub(/^#?ES_HEAP_SIZE=.*/, LINE); print; }' /etc/default/elasticsearch \
+        > /etc/default/elasticsearch.new && mv /etc/default/elasticsearch.new /etc/default/elasticsearch
+  fi
+  # override ES_JAVA_OPTS variable if set
+  if [ ! -z "$ES_JAVA_OPTS" ]; then
+    awk -v LINE="ES_JAVA_OPTS=\"$ES_JAVA_OPTS\"" '{ sub(/^#?ES_JAVA_OPTS=.*/, LINE); print; }' /etc/default/elasticsearch \
+        > /etc/default/elasticsearch.new && mv /etc/default/elasticsearch.new /etc/default/elasticsearch
+  fi
+
   service elasticsearch start
 
   # wait for Elasticsearch to start up before either starting Kibana (if enabled)
