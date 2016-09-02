@@ -38,7 +38,7 @@ rm -f /var/run/elasticsearch/elasticsearch.pid /var/run/logstash.pid \
 
 ## install elasticfence plugin
   echo "Installing ElasticFence..."
-  cd /usr/share/elasticsearch && ./bin/plugin install http://raw.githubusercontent.com/elasticfence/elasticsearch-http-user-auth/2.3.5/jar/elasticfence-2.3.5-SNAPSHOT.zip
+  cd /usr/share/elasticsearch && ./bin/plugin install http://raw.githubusercontent.com/elasticfence/elasticsearch-http-user-auth/2.4.0/jar/elasticfence-2.4.0-SNAPSHOT.zip
   echo "elasticfence.disabled: true" >> /etc/elasticsearch/elasticsearch.yml
   echo "elasticfence.root.password: elasticFence" >> /etc/elasticsearch/elasticsearch.yml
   echo 'elasticfence.whitelist: ["127.0.0.1", $(/sbin/ip route|awk '/default/ { print $3 }')"]' >> /etc/elasticsearch/elasticsearch.yml

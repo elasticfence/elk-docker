@@ -1,5 +1,5 @@
 # Dockerfile for ELK stack
-# Elasticsearch 2.3.5, Logstash 2.3.4, Kibana 4.5.4
+# Elasticsearch 2.4, Logstash 2.3.4, Kibana 4.6
 
 # Build with:
 # docker build -t <repo-user>/elk .
@@ -38,7 +38,7 @@ RUN set -x \
 
 ### install Elasticsearch
 
-ENV ES_VERSION 2.3.5
+ENV ES_VERSION 2.4.0
 ENV ES_GID 991
 ENV ES_UID 991
 
@@ -78,7 +78,7 @@ RUN sed -i -e 's#^LS_HOME=$#LS_HOME='$LOGSTASH_HOME'#' /etc/init.d/logstash \
 
 ### install Kibana
 
-ENV KIBANA_VERSION 4.5.4
+ENV KIBANA_VERSION 4.6.0
 ENV KIBANA_HOME /opt/kibana
 ENV KIBANA_PACKAGE kibana-${KIBANA_VERSION}-linux-x64.tar.gz
 ENV KIBANA_GID 993
