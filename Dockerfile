@@ -57,10 +57,10 @@ RUN groupadd -r elasticsearch -g ${ES_GID} \
 
 ENV FENCE_VERSION 2.4.0
 
-RUN cd /usr/share/elasticsearch && ./bin/plugin install https://rawgit.com/elasticfence/elasticfence-releases/master/releases/elasticfence-${FENCE_VERSION}-SNAPSHOT.zip \
+RUN /usr/share/elasticsearch/bin/plugin install https://rawgit.com/elasticfence/elasticfence-releases/master/releases/elasticfence-${FENCE_VERSION}-SNAPSHOT.zip \
   && echo "elasticfence.disabled: true" >> /etc/elasticsearch/elasticsearch.yml \
   && echo "elasticfence.root.password: elasticFence" >> /etc/elasticsearch/elasticsearch.yml \
-  && echo "elasticfence.whitelist: [\"127.0.0.1\", \"$(/sbin/ip route|awk '/default/ { print $3 }')\"]"" >> /etc/elasticsearch/elasticsearch.yml
+  && echo "elasticfence.whitelist: [\"127.0.0.1\", \"$(/sbin/ip route|awk '/default/ { print $3 }')\"]" >> /etc/elasticsearch/elasticsearch.yml
 
 
 ### install Logstash
